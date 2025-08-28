@@ -4,12 +4,21 @@
 
 name: Image Build
 on:
+  workflow_dispatch:
+  schedule:
+  - cron: "0 23 1 * *"
   push:
-    tags:
-    - "*"
+    paths-ignore:
+    - .github/**
+    - README.md
+    branches:
+    - master
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: true
+
+env:
+  VERSION: master
 
 jobs:
   build:
@@ -39,7 +48,7 @@ jobs:
 
         /kaniko/executor \
           --dockerfile="./Dockerfile" \
-          --context="git://github.com/izderadicka/audioserve#$BRANCH" \
+          --context="git://github.com/izderadicka/audioserve#$VERSION" \
           --destination="ghcr.io/${{ github.repository }}:v$TAG" \
           --build-arg CARGO_ARGS="--features=transcoding-cache,tags-encoding" \
           --push-retry 3
