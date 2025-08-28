@@ -1,0 +1,61 @@
+# References:
+# https://some-natalie.dev/blog/kaniko-in-arc/
+# https://dev.to/ipo/using-kaniko-to-build-and-publish-container-image-with-github-action-on-github-self-hosted-runners-d5m
+
+name: Image Build
+on:
+  push:
+    tags:
+    - "*"
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: arc-runner-${{ github.event.repository.name }}
+    container:
+      image: ghcr.io/randomcoww/kaniko:debug
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - name: Set tag
+      run: |
+        echo TAG=$(date -u +'%Y%m%d.%H%M') | tee -a "$GITHUB_ENV"
+
+    - name: Build and release container
+      run: |
+        mkdir -p $DOCKER_CONFIG
+        cat > $DOCKER_CONFIG/config.json <<EOF
+        {
+          "auths": {
+            "ghcr.io": {
+              "auth": "$(echo -n ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} | base64 -w0)"
+            }
+          }
+        }
+        EOF
+
+        /kaniko/executor \
+          --dockerfile="./Dockerfile" \
+          --context="git://github.com/izderadicka/audioserve#$BRANCH" \
+          --destination="ghcr.io/${{ github.repository }}:v$TAG" \
+          --build-arg CARGO_ARGS="--features=transcoding-cache,tags-encoding" \
+          --push-retry 3
+  cleanup:
+    needs:
+      - build
+    runs-on: arc-runner-${{ github.event.repository.name }}
+    container:
+      image: docker.io/node:current-alpine
+    permissions:
+      packages: write
+    steps:
+      - name: Remove old container images
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ github.event.repository.name }}
+          package-type: container
+          min-versions-to-keep: 4
+          token: ${{ secrets.GITHUB_TOKEN }}
